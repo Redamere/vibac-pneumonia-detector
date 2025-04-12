@@ -15,3 +15,6 @@ Thumbs.db
 
 # Environment secrets
 .env
+
+# X-ray images folder
+/dataset
