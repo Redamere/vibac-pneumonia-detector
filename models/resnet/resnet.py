@@ -7,7 +7,7 @@ from tensorflow import keras
 from tensorflow.keras import layers
 from tensorflow.keras.models import Sequential
 
-import tensorflow_decision_forests as tfdf
+# import tensorflow_decision_forests as tfdf
 import pandas as pd
 
 import pathlib
@@ -17,7 +17,7 @@ img_height = 224
 img_width = 224
 
 train_ds = tf.keras.utils.image_dataset_from_directory(
-  "chest_xray/train",
+  "dataset/train",
   validation_split=0.2,
   subset="training",
   seed=123,
@@ -25,7 +25,7 @@ train_ds = tf.keras.utils.image_dataset_from_directory(
   batch_size=batch_size)
 
 val_ds = tf.keras.utils.image_dataset_from_directory(
-  "chest_xray/test",
+  "dataset/val",
   validation_split=0.2,
   subset="validation",
   seed=123,
@@ -33,7 +33,7 @@ val_ds = tf.keras.utils.image_dataset_from_directory(
   batch_size=batch_size)
 
 class_names = train_ds.class_names
-print(class_names)
+print(f"Class Names :{class_names}")
 
 import matplotlib.pyplot as plt
 
@@ -78,8 +78,11 @@ model.compile(optimizer='adam',
 
 model.summary()
 
-epochs=10
+num_epochs=10
 history = model.fit(
   train_ds,
   validation_data=val_ds,
-  epochs=32)
+  epochs=num_epochs)
+
+
+
