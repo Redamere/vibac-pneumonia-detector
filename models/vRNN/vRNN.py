@@ -1,6 +1,6 @@
 import os
 import tensorflow as tf
-from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, Reshape, LSTM, Dense, Dropout, Bidirectional, Layer
+from tensorflow.keras.layers import BatchNormalization, GlobalAveragePooling2D, Input, Conv2D, MaxPooling2D, Reshape, LSTM, Dense, Dropout, Bidirectional, Layer
 from tensorflow.keras.models import Model
 from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
@@ -16,24 +16,27 @@ tf.random.set_seed(42)
 IMAGE_SIZE = (224, 224)
 INPUT_SHAPE = (*IMAGE_SIZE, 3)
 BATCH_SIZE = 126
-EPOCHS = 15
-LATENT_DIM = 64
+EPOCHS = 50
+LATENT_DIM = 126
+KL_WEIGHT = 0.0001
 
 # Paths to dataset directories
-BASE_DIR = "dataset/chest_xray"
+BASE_DIR = "../../dataset/balanced/chest_xray"
 TRAIN_DIR = os.path.join(BASE_DIR, "train")
 VAL_DIR = os.path.join(BASE_DIR, "val")
 TEST_DIR = os.path.join(BASE_DIR, "test")
 
 # Data augmentation and preprocessing for training
 train_datagen = ImageDataGenerator(
-    rescale=1. / 255,
-    rotation_range=15,
-    width_shift_range=0.1,
-    height_shift_range=0.1,
-    shear_range=0.1,
-    zoom_range=0.1,
+    rescale=1./255,
+    rotation_range=30,
+    width_shift_range=0.2,
+    height_shift_range=0.2,
+    shear_range=0.2,
+    zoom_range=0.2,
     horizontal_flip=True,
+    vertical_flip=False,
+    brightness_range=[0.8, 1.2],
     fill_mode='nearest'
 )
 
@@ -93,24 +96,17 @@ class Sampling(Layer):
 
 # KL Loss Layer
 class KLDivergenceLayer(Layer):
-    """Layer for computing KL divergence loss"""
-
-    def __init__(self, **kwargs):
+    def __init__(self, weight=KL_WEIGHT, **kwargs):
+        self.weight = weight
         super(KLDivergenceLayer, self).__init__(**kwargs)
 
     def call(self, inputs):
         z_mean, z_log_var = inputs
-
-        # Compute KL divergence
         kl_loss = -0.5 * tf.reduce_mean(
             1 + z_log_var - tf.square(z_mean) - tf.exp(z_log_var),
             axis=-1
         )
-
-        # Add loss
-        self.add_loss(kl_loss)
-
-        # Return the inputs unchanged
+        self.add_loss(self.weight * kl_loss)  # Apply weight to KL loss
         return inputs
 
     def compute_output_shape(self, input_shape):
@@ -124,20 +120,31 @@ def build_vrnn_model(input_shape=INPUT_SHAPE, num_classes=num_classes):
 
     # CNN Encoder
     x = Conv2D(64, (3, 3), activation='relu', padding='same')(inputs)
+    x = BatchNormalization()(x)
     x = Conv2D(64, (3, 3), activation='relu', padding='same')(x)
+    x = BatchNormalization()(x)
     x = MaxPooling2D((2, 2))(x)
+    x = Dropout(0.2)(x)
 
     x = Conv2D(128, (3, 3), activation='relu', padding='same')(x)
+    x = BatchNormalization()(x)
     x = Conv2D(128, (3, 3), activation='relu', padding='same')(x)
+    x = BatchNormalization()(x)
     x = MaxPooling2D((2, 2))(x)
+    x = Dropout(0.3)(x)
 
     x = Conv2D(256, (3, 3), activation='relu', padding='same')(x)
+    x = BatchNormalization()(x)
     x = Conv2D(256, (3, 3), activation='relu', padding='same')(x)
+    x = BatchNormalization()(x)
     x = MaxPooling2D((2, 2))(x)
+    x = Dropout(0.4)(x)
 
     x = Conv2D(512, (3, 3), activation='relu', padding='same')(x)
+    x = BatchNormalization()(x)
     x = Conv2D(512, (3, 3), activation='relu', padding='same')(x)
-    x = MaxPooling2D((2, 2))(x)
+    x = BatchNormalization()(x)
+    x = MaxPooling2D((2, 2))(x)  # Instead of MaxPooling + Reshape
 
     # Reshape for RNN
     _, feature_h, feature_w, feature_c = x.shape
@@ -148,8 +155,8 @@ def build_vrnn_model(input_shape=INPUT_SHAPE, num_classes=num_classes):
     x = Bidirectional(LSTM(256))(x)
 
     # Variational Latent Space
-    z_mean = Dense(LATENT_DIM, name='z_mean')(x)
-    z_log_var = Dense(LATENT_DIM, name='z_log_var')(x)
+    z_mean = Dense(LATENT_DIM*2, name='z_mean')(x)
+    z_log_var = Dense(LATENT_DIM*2, name='z_log_var')(x)
 
     # Apply KL divergence
     KLDivergenceLayer()([z_mean, z_log_var])
@@ -158,9 +165,12 @@ def build_vrnn_model(input_shape=INPUT_SHAPE, num_classes=num_classes):
     z = Sampling()([z_mean, z_log_var])
 
     # Decoder (Dense layers)
-    decoder_h = Dense(256, activation='relu')(z)
-    decoder_h = Dropout(0.5)(decoder_h)
-    outputs = Dense(num_classes, activation='softmax')(decoder_h)
+    x = Dense(512, activation='relu')(z)
+    x = BatchNormalization()(x)
+    x = Dropout(0.5)(x)
+    x = Dense(256, activation='relu')(x)
+    x = BatchNormalization()(x)
+    outputs = Dense(num_classes, activation='softmax')(x)
 
     # Define VRNN model
     model = Model(inputs, outputs)
@@ -190,7 +200,7 @@ callbacks = [
     ),
     EarlyStopping(
         monitor='val_loss',
-        patience=7,
+        patience=12,
         verbose=1
     ),
     ReduceLROnPlateau(
@@ -293,50 +303,4 @@ def predict_image(image_path, model, class_names):
 vrnn_model.save('vrnn_chest_xray_model.keras')
 print("Model saved to 'vrnn_chest_xray_model.keras'")
 
-
-# Generate latent space visualization function
-def generate_latent_visualization(model, generator, class_names, num_samples=100):
-    # Get a batch of images
-    generator.reset()
-    batch_x, batch_y = next(generator)
-    batch_x = batch_x[:num_samples]
-    batch_y = batch_y[:num_samples]
-
-    # Create a model that outputs the mean of latent space
-    latent_model = Model(model.input, model.get_layer('z_mean').output)
-    latent_vectors = latent_model.predict(batch_x)
-
-    # Reduce to 2D for visualization
-    from sklearn.decomposition import PCA
-    pca = PCA(n_components=2)
-    latent_2d = pca.fit_transform(latent_vectors)
-
-    # Plot
-    plt.figure(figsize=(10, 8))
-    colors = ['r', 'b', 'g', 'c', 'm', 'y', 'k']  # Add more colors if needed
-
-    for i, class_idx in enumerate(range(num_classes)):
-        mask = np.argmax(batch_y, axis=1) == class_idx
-        plt.scatter(
-            latent_2d[mask, 0],
-            latent_2d[mask, 1],
-            c=colors[i % len(colors)],
-            label=class_names[class_idx],
-            alpha=0.7
-        )
-
-    plt.legend()
-    plt.title('Latent Space Visualization (PCA)')
-    plt.xlabel('PCA Dimension 1')
-    plt.ylabel('PCA Dimension 2')
-    plt.savefig('vrnn_latent_space.png')
-    plt.close()
-
-
-# Generate latent space visualization if we have enough data
-try:
-    generate_latent_visualization(vrnn_model, test_generator, class_names)
-    print("Latent space visualization generated.")
-except Exception as e:
-    print(f"Could not generate latent space visualization: {e}")
 
