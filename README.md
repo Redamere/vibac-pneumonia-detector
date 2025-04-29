@@ -1,4 +1,11 @@
-All evaluations are on main, each model has its own train and validation methods
+Pneumonia Image Detector
+==============
 
-environment is in requirements.txt
+# Model Architectures used  
+Visual Transformer  
+vRNN  
+ResNet-101  
 
+# To Run  
+run: pip install requirements.txt  
+run each model: python3 "filename".py  
