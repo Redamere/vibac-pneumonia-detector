@@ -14,7 +14,11 @@ epochs = 1
 
 # Load the entire dataset (we'll split it ourselves for cross-validation)
 full_ds = tf.keras.utils.image_dataset_from_directory(
+<<<<<<< HEAD
     "chest_xray/",
+=======
+    "chest_xray/train",
+>>>>>>> 99503f1ecfe4ccdbe9d4eebfe317227ddc34a136
     seed=123,
     image_size=(img_height, img_width),
     batch_size=batch_size,
@@ -87,4 +91,8 @@ for i in range(num_folds):
     print(f'Fold {i+1}: Val Accuracy = {accuracies[i]:.4f}, Val Loss = {losses[i]:.4f}')
 
 print(f'\nAverage accuracy across all folds: {np.mean(accuracies):.4f} (+/- {np.std(accuracies):.4f})')
+<<<<<<< HEAD
 print(f'Average loss across all folds: {np.mean(losses):.4f} (+/- {np.std(losses):.4f})')
+=======
+print(f'Average loss across all folds: {np.mean(losses):.4f} (+/- {np.std(losses):.4f})')
+>>>>>>> 99503f1ecfe4ccdbe9d4eebfe317227ddc34a136
